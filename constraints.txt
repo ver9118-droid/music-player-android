@@ -1,0 +1,7 @@
+# python-for-android(p4a)의 순수 파이썬 모듈 리졸버가 charset-normalizer 3.5.x 의
+# Android 전용 휠(android_24_arm64_v8a)을 선택하면, 이어지는 호스트 pip 설치 단계가
+# "not a supported wheel on this platform" 으로 실패합니다.
+#
+# 3.4.4 는 순수 파이썬 휠(py3-none-any)을 제공하므로 어느 플랫폼에서나 설치됩니다.
+# 이 파일은 GitHub Actions 에서 PIP_CONSTRAINT 환경변수로 전달됩니다.
+charset-normalizer==3.4.4
