@@ -26,6 +26,7 @@ from kivy.clock import Clock                              # noqa: E402
 from kivy.core.text import LabelBase, DEFAULT_FONT        # noqa: E402
 from kivy.graphics import Color, RoundedRectangle, Rectangle  # noqa: E402
 from kivy.metrics import dp, sp                           # noqa: E402
+from kivy.properties import ListProperty                # noqa: E402
 from kivy.uix.boxlayout import BoxLayout                  # noqa: E402
 from kivy.uix.button import Button                        # noqa: E402
 from kivy.uix.floatlayout import FloatLayout              # noqa: E402
@@ -93,6 +94,18 @@ class Lbl(_KivyLabel):
         self.text_size = (self.width, self.height)
 
 
+def fix_height(box, height):
+    """명시적 높이를 가진 컨테이너를 만듭니다.
+
+    Kivy 의 BoxLayout 는 자식의 minimum_height 로 부모 최소높이를 계산한다.
+    고정 높이를 준 행은 minimum_height 도 같이 지정해야 카드가 접히지 않는다.
+    (minimum_height 를 height 에 바인딩하면 최소높이가 높이를 덮어써 접힌다)
+    """
+    box.height = height
+    box.minimum_height = height
+    return box
+
+
 class Card(BoxLayout):
     def __init__(self, **kw):
         kw.setdefault("orientation", "vertical")
@@ -105,6 +118,8 @@ class Card(BoxLayout):
         self.canvas.before.add(self._c)
         self.canvas.before.add(self._r)
         self.bind(pos=self._sync, size=self._sync)
+        # 카드 높이는 내용(자식 최소높이 합)을 따라간다
+        self.bind(minimum_height=self.setter("height"))
         self._sync()
 
     def _sync(self, *a):
@@ -113,7 +128,7 @@ class Card(BoxLayout):
 
 
 class FlatButton(Button):
-    bg = [0.17, 0.21, 0.27, 1]
+    bg = ListProperty([0.17, 0.21, 0.27, 1])
 
     def __init__(self, **kw):
         kw.setdefault("background_normal", "")
@@ -176,12 +191,14 @@ class TrackRow(BoxLayout):
         self.add_widget(Lbl(text=str(track.rank or "-"), color=MUTED,
                             font_size=sp(12), size_hint_x=None, width=dp(24),
                             halign="center"))
-        info = BoxLayout(orientation="vertical")
+        info = BoxLayout(orientation="vertical", spacing=dp(1))
         info.add_widget(Lbl(text=track.title, color=FG, font_size=sp(12.5),
-                            halign="left"))
+                            halign="left", valign="middle",
+                            size_hint_y=None, height=dp(22)))
         sub = track.artist or track.source
         info.add_widget(Lbl(text=sub, color=MUTED, font_size=sp(10),
-                            halign="left"))
+                            halign="left", valign="middle",
+                            size_hint_y=None, height=dp(18)))
         self.add_widget(info)
         self.add_widget(Lbl(text="▶", color=ACCENT, font_size=sp(15),
                             size_hint_x=None, width=dp(30), halign="center"))
@@ -221,8 +238,8 @@ class ChartScreen(BaseScreen):
     def __init__(self, app, **kw):
         super().__init__(app, name="chart", **kw)
         card = Card()
-        row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(42),
-                        spacing=dp(6))
+        row = fix_height(BoxLayout(orientation="horizontal", size_hint_y=None,
+                                    spacing=dp(6)), dp(42))
         self.sp_source = Spinner(text=SOURCES[0].label, values=[s.label for s in SOURCES],
                                  size_hint_y=None, height=dp(40), font_size=sp(12),
                                  background_normal="", background_down="",
@@ -262,24 +279,27 @@ class PlayerScreen(BaseScreen):
     def __init__(self, app, **kw):
         super().__init__(app, name="player", **kw)
         card = Card()
-        art_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(120),
-                            spacing=dp(10))
+        art_row = fix_height(BoxLayout(orientation="horizontal", size_hint_y=None,
+                                          spacing=dp(10)), dp(120))
         self.art = KvImage(size_hint_x=None, width=dp(110), allow_stretch=True,
-                           keep_ratio=True, color=(1, 1, 1, 1))
+                           keep_ratio=True, color=(1, 1, 1, 1), opacity=0)
         art_row.add_widget(self.art)
-        info = BoxLayout(orientation="vertical", spacing=dp(4))
+        info = BoxLayout(orientation="vertical", spacing=dp(2))
         self.lbl_title = Lbl(text="재생할 곡이 없습니다", color=FG, bold=True,
-                             font_size=sp(14), halign="left", valign="bottom")
-        self.lbl_artist = Lbl(text="", color=MUTED, font_size=sp(11.5), halign="left")
-        self.lbl_status = Lbl(text="", color=ORANGE, font_size=sp(10.5), halign="left")
+                             font_size=sp(14), halign="left", valign="bottom",
+                             size_hint_y=None, height=dp(28))
+        self.lbl_artist = Lbl(text="", color=MUTED, font_size=sp(11.5), halign="left",
+                              valign="middle", size_hint_y=None, height=dp(20))
+        self.lbl_status = Lbl(text="", color=ORANGE, font_size=sp(10.5), halign="left",
+                              valign="middle", size_hint_y=None, height=dp(18))
         info.add_widget(self.lbl_title)
         info.add_widget(self.lbl_artist)
         info.add_widget(self.lbl_status)
         art_row.add_widget(info)
         card.add_widget(art_row)
 
-        prog = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(22),
-                         spacing=dp(6))
+        prog = fix_height(BoxLayout(orientation="horizontal", size_hint_y=None,
+                                     spacing=dp(6)), dp(22))
         self.sld_pos = Slider(min=0, max=100, value=0, size_hint_x=1,
                               cursor_size=(dp(22), dp(22)))
         self.sld_pos.bind(value=lambda *a: None)
@@ -289,21 +309,21 @@ class PlayerScreen(BaseScreen):
         prog.add_widget(self.lbl_time)
         card.add_widget(prog)
 
-        ctrl = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(62),
-                         spacing=dp(8))
-        b_prev = IconButton(text="⏮", bg=FIELD)
+        ctrl = fix_height(BoxLayout(orientation="horizontal", size_hint_y=None,
+                                     spacing=dp(8)), dp(62))
+        b_prev = IconButton(text="이전", bg=FIELD)
         b_prev.bind(on_release=lambda *a: self.app.cmd("prev"))
-        self.b_play = IconButton(text="▶", bg=GREEN)
+        self.b_play = IconButton(text="재생", bg=GREEN)
         self.b_play.bind(on_release=lambda *a: self.app.cmd("toggle"))
-        b_next = IconButton(text="⏭", bg=FIELD)
+        b_next = IconButton(text="다음", bg=FIELD)
         b_next.bind(on_release=lambda *a: self.app.cmd("next"))
         ctrl.add_widget(b_prev)
-        ctrl.add_widget(b_play)
+        ctrl.add_widget(self.b_play)
         ctrl.add_widget(b_next)
         card.add_widget(ctrl)
 
-        vol = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(34),
-                        spacing=dp(6))
+        vol = fix_height(BoxLayout(orientation="horizontal", size_hint_y=None,
+                                    spacing=dp(6)), dp(34))
         vol.add_widget(Lbl(text="🔈", color=MUTED, font_size=sp(12),
                            size_hint_x=None, width=dp(28)))
         self.sld_vol = Slider(min=0, max=100, value=80, size_hint_x=1,
@@ -357,20 +377,20 @@ class SettingsScreen(BaseScreen):
                             halign="left", valign="middle", text_size=(None, None)))
 
         def row(title, key, values=None):
-            r = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(40),
-                          spacing=dp(8))
+            r = fix_height(BoxLayout(orientation="horizontal", size_hint_y=None,
+                                      spacing=dp(8)), dp(40))
             r.add_widget(Lbl(text=title, color=FG, font_size=sp(12), halign="left"))
             if values is None:
                 sw = Switch(active=bool(self.app.settings.get(key)))
                 sw.bind(active=lambda inst, val: self.app.set_setting(key, val))
                 r.add_widget(sw)
             else:
-                sp = Spinner(text=str(self.app.settings.get(key)),
-                             values=values, size_hint_x=None, width=dp(110),
-                             font_size=sp(11.5), background_normal="",
-                             background_down="", background_color=FIELD, color=FG)
-                sp.bind(text=lambda inst, val: self.app.set_setting(key, val))
-                r.add_widget(sp)
+                spin = Spinner(text=str(self.app.settings.get(key)),
+                               values=values, size_hint_x=None, width=dp(110),
+                               font_size=sp(11.5), background_normal="",
+                               background_down="", background_color=FIELD, color=FG)
+                spin.bind(text=lambda inst, val: self.app.set_setting(key, val))
+                r.add_widget(spin)
             card.add_widget(r)
 
         row("무한 재생", "infinite")
@@ -495,18 +515,38 @@ class MusicApp(App):
         self._set_status(msg)
 
     # ---------------------------------------------------------- 재생
+    def _load_cover(self, track):
+        """표지를 내려받아 앨범아트에 표시한다."""
+        def work():
+            path = self.downloader.download_thumb(track)
+            if not path:
+                return
+            Clock.schedule_once(lambda *a: self._cover_ready(path), 0)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _cover_ready(self, path):
+        try:
+            self.player_screen.art.source = path
+            self.player_screen.art.opacity = 1
+            self.player_screen.art.texture_update()
+        except Exception:
+            pass
+
     def play_track(self, track):
         for i, t in enumerate(self.tracks):
             if t.key == track.key:
                 self.client.send("play", index=i)
                 self.goto("player")
                 self._load_lyrics(track)
+                self._load_cover(track)
                 return
         # 목록에 없으면(단일 곡) 그대로 재생
         self.client.send("playlist", tracks=[track.to_dict()])
         self.client.send("play", index=0)
         self.goto("player")
         self._load_lyrics(track)
+        self._load_cover(track)
 
     def cmd(self, name, **payload):
         self.client.send(name, **payload)
@@ -571,7 +611,7 @@ class MusicApp(App):
         if not self._seeking:
             self.player_screen.sld_pos.value = (pos / dur * 100.0) if dur > 0 else 0
         self.player_screen.lbl_time.text = f"{int(pos//60)}:{int(pos%60):02d} / {int(dur//60)}:{int(dur%60):02d}"
-        self.player_screen.b_play.text = "⏸" if st.get("playing") else "▶"
+        self.player_screen.b_play.text = "일시정지" if st.get("playing") else "재생"
         # 가사 하이라이트
         if self._lyric_lines and self._lyric_times:
             try:
