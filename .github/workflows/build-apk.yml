@@ -36,6 +36,13 @@ jobs:
           path: ~/.android
           key: android-debug-keystore-v1
 
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p "$HOME/.buildozer" "$HOME/.android"
+          yes | docker run --rm \
+            -v "$HOME/.buildozer":/home/user/.buildozer \
+            ghcr.io/kivy/buildozer:latest sdkmanager --licenses || true
+
       - name: Build with buildozer (official docker image)
         run: |
           mkdir -p "$HOME/.buildozer" "$HOME/.android"
