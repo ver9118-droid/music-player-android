@@ -63,7 +63,12 @@ jobs:
             python3 -m zipfile -e /tmp/ct.zip "$SDK/cmdline-tools"
             mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
           fi
+          # 구형 SDK 레이아웃(tools/bin/sdkmanager) 도 만들어 준다 (p4a/이미지 요구사항)
+          if [ ! -x "$SDK/tools/bin/sdkmanager" ]; then
+            cp -r "$SDK/cmdline-tools/latest/." "$SDK/tools/" || true
+          fi
           ln -sf "$SDK/cmdline-tools/latest/bin/sdkmanager" "$SDK/tools/bin/sdkmanager"
+          chmod +x "$SDK/tools/bin/"* 2>/dev/null || true
           L="$SDK/licenses"
           printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$L/android-sdk-license"
           printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$L/android-sdk-preview-license"
