@@ -38,10 +38,13 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          mkdir -p "$HOME/.buildozer" "$HOME/.android"
-          yes | docker run --rm \
-            -v "$HOME/.buildozer":/home/user/.buildozer \
-            ghcr.io/kivy/buildozer:latest sdkmanager --licenses || true
+          mkdir -p "$HOME/.buildozer/android/platform/android-sdk/licenses"
+          L="$HOME/.buildozer/android/platform/android-sdk/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$L/android-sdk-license"
+          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$L/android-sdk-preview-license"
+          printf '\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a' > "$L/android-googletv-license"
+          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$L/intel-android-extra-license"
+          cat "$L/android-sdk-license"
 
       - name: Build with buildozer (official docker image)
         run: |
