@@ -36,41 +36,8 @@ jobs:
           path: ~/.android
           key: android-debug-keystore-v1
 
-      - name: Prepare Android SDK (cmdline-tools + legacy tools/bin layout)
-        run: |
-          set -e
-          SDK="$HOME/.buildozer/android/platform/android-sdk"
-          PLATFORM="$HOME/.buildozer/android/platform"
-          mkdir -p "$PLATFORM" "$SDK/cmdline-tools" "$SDK/tools/bin" "$SDK/licenses"
-          # 1) 형제 저장소(lotto)의 검증된 SDK 캐시를 그대로 가져온다 (가장 빠르고 확실)
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          SRC_REPO="ver9118-droid/lotto645-android"
-          CID=$(curl -fsSL -H "Authorization: Bearer $TOKEN" \
-                "https://api.github.com/repos/$SRC_REPO/actions/caches?key=android-sdk-ndk-Linux-v1" \
-                | python3 -c "import json,sys;d=json.load(sys.stdin);print(d['actions_caches'][0]['id'] if d.get('actions_caches') else '')")
-          if [ -n "$CID" ]; then
-            curl -fsSL -H "Authorization: Bearer $TOKEN" \
-              "https://api.github.com/repos/$SRC_REPO/actions/caches/$CID/archive" -o /tmp/sdk.tar.gz
-            tar -xzf /tmp/sdk.tar.gz -C "$PLATFORM"
-            echo "SDK 캐시 복원 완료 ($SRC_REPO)"
-          fi
-          # 2) 없으면 직접 설치 (구형 tools/bin 레이아웃 심볼릭 링크)
-          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
-            curl -fsSL -o /tmp/cmdline-tools.zip \
-              "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
-            unzip -q /tmp/cmdline-tools.zip -d "$SDK/cmdline-tools"
-            mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
-          fi
-          ln -sf "$SDK/cmdline-tools/latest/bin/sdkmanager" "$SDK/tools/bin/sdkmanager"
-          ln -sf "$SDK/cmdline-tools/latest/bin/avdmanager" "$SDK/tools/bin/avdmanager" || true
-          # 3) 라이선스 미리 수락
-          L="$SDK/licenses"
-          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$L/android-sdk-license"
-          printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$L/android-sdk-preview-license"
-          printf '\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a' > "$L/android-googletv-license"
-          printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$L/intel-android-extra-license"
-          ls -l "$SDK/tools/bin/sdkmanager"
-
+      # buildozer 이미지가 구형 SDK 레이아웃(tools/bin/sdkmanager)을 요구하므로
+      # 컨테이너 안에서 바로잡아 준 뒤 빌드한다.
       - name: Build with buildozer (official docker image)
         run: |
           mkdir -p "$HOME/.buildozer" "$HOME/.android"
@@ -78,7 +45,24 @@ jobs:
             -v "$PWD":/home/user/hostcwd \
             -v "$HOME/.buildozer":/home/user/.buildozer \
             -v "$HOME/.android":/home/user/.android \
-            ghcr.io/kivy/buildozer:latest android debug
+            ghcr.io/kivy/buildozer:latest bash -c '
+              set -e
+              SDK=/home/user/.buildozer/android/platform/android-sdk
+              mkdir -p "$SDK/cmdline-tools" "$SDK/tools/bin" "$SDK/licenses"
+              if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+                curl -fsSL -o /tmp/ct.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+                python3 -m zipfile -e /tmp/ct.zip "$SDK/cmdline-tools"
+                mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+              fi
+              ln -sf "$SDK/cmdline-tools/latest/bin/sdkmanager" "$SDK/tools/bin/sdkmanager"
+              L="$SDK/licenses"
+              printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$L/android-sdk-license"
+              printf "\n84831b9409646a918e30573bab4c9c91346d8abd" > "$L/android-sdk-preview-license"
+              printf "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > "$L/android-googletv-license"
+              printf "\nd975f751698a77b662f1254ddbeed3901e976f5a" > "$L/intel-android-extra-license"
+              "$SDK/tools/bin/sdkmanager" --version
+              buildozer android debug
+            '
 
       - name: Show result
         run: ls -lh bin/ || true
