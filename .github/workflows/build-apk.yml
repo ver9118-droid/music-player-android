@@ -1,0 +1,56 @@
+name: build-apk
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo apt-get clean
+          df -h /
+
+      - name: Cache Android SDK / NDK
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer/android/platform/android-sdk
+            ~/.buildozer/android/platform/android-ndk-*
+          key: android-sdk-ndk-${{ runner.os }}-v1
+
+      - name: Cache debug keystore (서명 일관성 유지)
+        uses: actions/cache@v4
+        with:
+          path: ~/.android
+          key: android-debug-keystore-v1
+
+      - name: Build with buildozer (official docker image)
+        run: |
+          mkdir -p "$HOME/.buildozer" "$HOME/.android"
+          docker run --rm \
+            -v "$PWD":/home/user/hostcwd \
+            -v "$HOME/.buildozer":/home/user/.buildozer \
+            -v "$HOME/.android":/home/user/.android \
+            ghcr.io/kivy/buildozer:latest android debug
+
+      - name: Show result
+        run: ls -lh bin/ || true
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: infiniteplayer-apk
+          path: bin/*.apk
+          if-no-files-found: error
