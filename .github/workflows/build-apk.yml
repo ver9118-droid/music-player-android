@@ -36,15 +36,27 @@ jobs:
           path: ~/.android
           key: android-debug-keystore-v1
 
-      - name: Accept Android SDK licenses
+      - name: Prepare Android SDK (cmdline-tools + legacy tools/bin layout)
         run: |
-          mkdir -p "$HOME/.buildozer/android/platform/android-sdk/licenses"
-          L="$HOME/.buildozer/android/platform/android-sdk/licenses"
+          set -e
+          SDK="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p "$SDK/cmdline-tools" "$SDK/tools/bin" "$SDK/licenses"
+          if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            curl -fsSL -o /tmp/cmdline-tools.zip \
+              "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+            unzip -q /tmp/cmdline-tools.zip -d "$SDK/cmdline-tools"
+            mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
+          fi
+          ln -sf "$SDK/cmdline-tools/latest/bin/sdkmanager" "$SDK/tools/bin/sdkmanager"
+          ln -sf "$SDK/cmdline-tools/latest/bin/avdmanager" "$SDK/tools/bin/avdmanager" || true
+          ln -sf "$SDK/cmdline-tools/latest/bin/aapt2" "$SDK/tools/bin/aapt2" || true
+          # 라이선스 미리 수락 (build-tools 설치 시 물음 프롬프트 방지)
+          L="$SDK/licenses"
           printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee' > "$L/android-sdk-license"
           printf '\n84831b9409646a918e30573bab4c9c91346d8abd' > "$L/android-sdk-preview-license"
           printf '\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a' > "$L/android-googletv-license"
           printf '\nd975f751698a77b662f1254ddbeed3901e976f5a' > "$L/intel-android-extra-license"
-          cat "$L/android-sdk-license"
+          "$SDK/tools/bin/sdkmanager" --version
 
       - name: Build with buildozer (official docker image)
         run: |
