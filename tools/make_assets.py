@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 ASSETS = HERE / "assets"
 ASSETS.mkdir(parents=True, exist_ok=True)
 
