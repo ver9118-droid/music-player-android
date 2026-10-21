@@ -22,7 +22,7 @@ source.exclude_dirs = .buildozer, bin, .git, .github, __pycache__, tests, .venv,
 source.exclude_patterns = *.pyc, *.pyo, *.md, *.log
 
 # (str) Application versioning (method 1)
-version = 1.0.0
+version = 1.1.1
 
 # (list) Application requirements
 #  - yt-dlp : 유튜브 검색/오디오 다운로드 (순수 파이썬)

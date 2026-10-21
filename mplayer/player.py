@@ -28,6 +28,7 @@ class AndroidPlayer:
         self._volume = 0.8
         self._on_complete = None
         self._on_error = None
+        self.last_error = ""
 
     # ------------------------------------------------------------- jnius 준비
     @staticmethod
@@ -39,14 +40,23 @@ class AndroidPlayer:
         autoclass = self._java()
         MediaPlayer = autoclass("android.media.MediaPlayer")
         mp = MediaPlayer()
-        # 완료/오류 콜백을 UI 스레드로 넘기기 위해 핸들러를 쓴다.
-        Handler = autoclass("android.os.Handler")
-        Looper = autoclass("android.os.Looper")
-        handler = Handler(Looper.getMainLooper())
-        listener = autoclass("android.media.MediaPlayer$OnCompletionListener")
-        mp.setOnCompletionListener(listener(lambda *a: self._fire_complete()))
-        err_listener = autoclass("android.media.MediaPlayer$OnErrorListener")
-        mp.setOnErrorListener(err_listener(lambda *a, b: self._fire_error()))
+        # 완료/오류 콜백은 메인 루퍼에서 오도록 핸들러를 지정한다.
+        try:
+            Handler = autoclass("android.os.Handler")
+            Looper = autoclass("android.os.Looper")
+            handler = Handler(Looper.getMainLooper())
+        except Exception:
+            handler = None
+        try:
+            listener = autoclass("android.media.MediaPlayer$OnCompletionListener")
+            mp.setOnCompletionListener(listener(lambda *a: self._fire_complete()))
+        except Exception as exc:
+            self.last_error = f"완료 콜백 설정 실패: {exc}"
+        try:
+            err_listener = autoclass("android.media.MediaPlayer$OnErrorListener")
+            mp.setOnErrorListener(err_listener(lambda *a, b: self._fire_error(a)))
+        except Exception as exc:
+            self.last_error = self.last_error or f"오류 콜백 설정 실패: {exc}"
         return mp, handler
 
     # ------------------------------------------------------------- 콜백
@@ -63,7 +73,18 @@ class AndroidPlayer:
             except Exception:
                 pass
 
-    def _fire_error(self):
+    def _fire_error(self, extra=None):
+        msg = "재생 오류"
+        try:
+            if isinstance(extra, tuple) and len(extra) >= 4:
+                # (what, extra, what_extra)
+                try:
+                    msg = f"재생 오류 (코드 {int(extra[1])})"
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.last_error = msg
         if self._on_error:
             try:
                 self._on_error()
@@ -75,34 +96,93 @@ class AndroidPlayer:
         """파일 재생 (재생 준비까지 대기)."""
         if not IS_ANDROID:
             raise RuntimeError("이 플레이어는 안드로이드 전용입니다.")
+        if not path:
+            raise RuntimeError("재생할 파일이 없습니다.")
         with self._lock:
             self.release()
-            mp, handler = self._new_player()
+            self.last_error = ""
+            mp, _handler = self._new_player()
             self._mp = mp
             self._path = path
             self._paused = False
-            mp.setDataSource(path)
-            mp.prepare()
+            try:
+                self._set_audio_attributes(mp)
+            except Exception:
+                pass
+            try:
+                mp.setDataSource(path)
+            except Exception as exc:
+                # 경로가 안 먹으면 Uri 로 한 번 더 시도
+                try:
+                    from jnius import autoclass
+                    Uri = autoclass("android.net.Uri")
+                    mp.setDataSource(Uri.fromFile(path))
+                except Exception:
+                    self.release()
+                    raise RuntimeError(f"오디오 파일을 열 수 없습니다: {exc}") from exc
+            try:
+                mp.prepare()
+            except Exception as exc:
+                self.release()
+                raise RuntimeError(f"오디오 준비 실패: {exc}") from exc
+            # ★ 항상 0 초부터 시작한다.
+            #   (이전 곡의 재생 위치가 새 곡에 적용되는 것을 방지)
+            try:
+                mp.seekTo(0)
+            except Exception:
+                pass
             if start_pos > 0:
-                ms = int(start_pos * 1000)
-                if ms < mp.getDuration():
-                    mp.seekTo(ms)
-            mp.setVolume(self._volume, self._volume)
-            mp.start()
+                try:
+                    ms = int(start_pos * 1000)
+                    if ms < mp.getDuration():
+                        mp.seekTo(ms)
+                except Exception:
+                    pass
+            try:
+                mp.setVolume(self._volume, self._volume)
+            except Exception:
+                pass
+            try:
+                mp.start()
+            except Exception as exc:
+                self.release()
+                raise RuntimeError(f"재생을 시작할 수 없습니다: {exc}") from exc
             self._prepared = True
             return True
+
+    @staticmethod
+    def _set_audio_attributes(mp) -> None:
+        """음악 재생용 오디오 속성 지정 (알림/다른 앱과 겹치지 않게)."""
+        try:
+            from jnius import autoclass
+            AudioAttributes = autoclass("android.media.AudioAttributes")
+            ContentType = autoclass("android.media.AudioAttributes$ContentType")
+            Usage = autoclass("android.media.AudioAttributes$Usage")
+            attrs = AudioAttributes.Builder() \
+                .setContentType(ContentType.MUSIC) \
+                .setUsage(Usage.MEDIA) \
+                .build()
+            mp.setAudioAttributes(attrs)
+        except Exception:
+            pass
 
     def pause(self):
         with self._lock:
             if self._mp and self._prepared:
-                self._mp.pause()
-                self._paused = True
+                try:
+                    self._mp.pause()
+                    self._paused = True
+                except Exception as exc:
+                    self.last_error = f"일시정지 실패: {exc}"
 
     def resume(self):
         with self._lock:
             if self._mp and self._prepared:
-                self._mp.start()
-                self._paused = False
+                try:
+                    self._mp.start()
+                    self._paused = False
+                except Exception as exc:
+                    self.last_error = f"재생 재개 실패: {exc}"
 
     def stop(self):
         with self._lock:
@@ -128,7 +208,10 @@ class AndroidPlayer:
     def seek(self, seconds: float):
         with self._lock:
             if self._mp and self._prepared:
-                self._mp.seekTo(int(max(0.0, seconds) * 1000))
+                try:
+                    self._mp.seekTo(int(max(0.0, seconds) * 1000))
+                except Exception as exc:
+                    self.last_error = f"이동 실패: {exc}"
 
     def set_volume(self, value: float):
         self._volume = max(0.0, min(1.0, float(value)))
@@ -170,3 +253,7 @@ class AndroidPlayer:
     @property
     def path(self) -> str:
         return self._path
+
+    @property
+    def is_prepared(self) -> bool:
+        return self._prepared

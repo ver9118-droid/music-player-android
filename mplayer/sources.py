@@ -4,6 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
+# 즐겨찾기 목록은 소스 목록에 "★ 이름" 으로 붙는다.
+FAVORITE_PREFIX = "★ "
+
 
 @dataclass
 class Source:
@@ -14,6 +17,10 @@ class Source:
     url: str = ""
     query: str = ""          # 유튜브 검색어 (장르 소스)
     limit: int = 50
+
+    @property
+    def display(self) -> str:
+        return f"{self.group} > {self.label}"
 
 
 MELON = "멜론 차트"
@@ -66,7 +73,7 @@ def source_label(key: str) -> str:
     src = get_source(key)
     if not src:
         return key
-    return f"{src.group} > {src.label}"
+    return src.display
 
 
 def grouped() -> List[tuple]:

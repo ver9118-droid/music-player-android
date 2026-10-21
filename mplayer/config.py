@@ -13,15 +13,18 @@ from typing import Any, Dict
 
 APP_NAME = "무한 음악 플레이어"
 APP_ID = "InfiniteMusicPlayer"
-VERSION = "1.0.0"
+VERSION = "1.1.1"
 
 IS_ANDROID = "ANDROID_PRIVATE" in os.environ or "ANDROID_ARGUMENT" in os.environ
 
 
 def _base_dir() -> Path:
     # 서비스 프로세스/앱 프로세스가 같은 폴더를 써야 한다.
-    if IS_ANDROID:
-        return Path(os.environ["ANDROID_PRIVATE"])
+    #   ANDROID_PRIVATE 은 p4a 가 두 프로세스 모두에 동일하게 넣어준다.
+    #   (앱 프로세스 = filesDir, 서비스 프로세스 = filesDir)
+    env = os.environ.get("ANDROID_PRIVATE")
+    if env:
+        return Path(env)
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent.parent
@@ -48,8 +51,13 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "chart_limit": 50,
     "auto_update_hours": 6,
     "search_query": "{artist} {title}",
-    "lyrics_enabled": True,
     "theme": "dark",
+    # ── 아래는 안드로이드 버전에서 추가된 항목 ──
+    "prefetch": 3,            # 목록 로드 시 미리 내려받을 곡 수 (0 = 끄기)
+    "notify": True,           # 상태바 알림 표시
+    "yt_client": "auto",      # auto | android | tv | ios | web_safari
+    "audio_format": "auto",   # auto | m4a | webm | mp3
+    "keep_screen_on": False,
 }
 
 
@@ -95,20 +103,45 @@ def ca_bundle_path() -> str:
     here = Path(__file__).resolve().parent
     for cand in (here.parent / "assets" / "cacert.pem",
                  here / "assets" / "cacert.pem"):
-        if cand.exists():
-            return str(cand)
+        try:
+            if cand.exists():
+                return str(cand)
+        except Exception:
+            continue
     return ""
 
 
 def setup_tls() -> None:
-    """시스템 CA 저장소가 없는 안드로이드에서 인증서를 신뢰하도록 설정."""
-    ca = ca_bundle_path()
-    if not ca:
-        return
-    os.environ.setdefault("SSL_CERT_FILE", ca)
-    os.environ.setdefault("REQUESTS_CA_BUNDLE", ca)
+    """시스템 CA 저장소가 없는 안드로이드에서 인증서를 신뢰하도록 설정.
+
+    certifi 가 있으면 그 번들(더 최신)을 우선 사용하고, 없으면 앱에 동봉한
+    cacert.pem 을 쓴다.  환경변수를 덮어써야 requests/urllib3/yt-dlp 이
+    같은 인증서를 보게 된다.
+    """
+    bundle = ""
     try:
         import certifi
-        os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+        path = certifi.where()
+        if path and os.path.exists(path):
+            bundle = path
+    except Exception:
+        bundle = ""
+    if not bundle:
+        bundle = ca_bundle_path()
+    if not bundle:
+        return
+    os.environ["SSL_CERT_FILE"] = bundle
+    os.environ["REQUESTS_CA_BUNDLE"] = bundle
+    os.environ.setdefault("CURL_CA_BUNDLE", bundle)
+
+
+def log_line(msg: str) -> None:
+    """앱/서비스 공통 로그 파일에 한 줄 남긴다."""
+    try:
+        from datetime import datetime
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%H:%M:%S")
+        with LOG_FILE.open("a", encoding="utf-8") as fp:
+            fp.write(f"{stamp} {msg}\n")
     except Exception:
         pass

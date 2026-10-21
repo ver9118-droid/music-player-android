@@ -24,6 +24,7 @@ class ServiceClient:
         self._seq = 0
         self._service = None
         self._started = False
+        self.last_error = ""
 
     # ------------------------------------------------------------- 서비스 기동
     def _java_service(self):
@@ -43,12 +44,15 @@ class ServiceClient:
             activity_cls = autoclass_activity()
             mActivity = activity_cls.mActivity
             if mActivity is None:
+                self.last_error = "Activity 를 찾을 수 없습니다."
                 return False
             # start(활동, 작은아이콘, 제목, 내용, 인자)
             cls.start(mActivity, "icon", title, text, "")
             self._started = True
+            self.last_error = ""
             return True
-        except Exception:
+        except Exception as exc:
+            self.last_error = f"재생 서비스 시작 실패: {exc}"
             return False
 
     def stop(self):
@@ -56,7 +60,12 @@ class ServiceClient:
             return
         try:
             cls = self._java_service()
-            cls.stop()
+            ctx = autoclass_activity().mActivity
+            # p4a 는 start(Context,...) 와 stop(Context) 두 형태를 모두 제공한다.
+            try:
+                cls.stop(ctx)
+            except Exception:
+                pass
         except Exception:
             pass
         self._started = False
@@ -66,11 +75,8 @@ class ServiceClient:
         if not IS_ANDROID:
             return
         try:
-            cls = self._java_service()
-            mActivity = autoclass_activity().mActivity
-            if mActivity is None:
-                return
-            cls.start(mActivity, "icon", title, text, "")
+            from . import notifier
+            notifier.update(title, text)
         except Exception:
             pass
 
@@ -103,6 +109,38 @@ class ServiceClient:
     def is_running(self) -> bool:
         st = self.state()
         return bool(st.get("alive"))
+
+    def wait_ready(self, timeout: float = 8.0) -> bool:
+        """서비스가 살아날 때까지 기다린다."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.is_running():
+                return True
+            time.sleep(0.25)
+        return False
+
+    # ------------------------------------------------------------- 권한
+    def request_notification_permission(self) -> bool:
+        """안드로이드 13+ 알림 권한을 요청한다(있으면 이미 granted)."""
+        if not IS_ANDROID:
+            return True
+        try:
+            from jnius import autoclass
+            Context = autoclass("android.content.Context")
+            PackageManager = autoclass("android.content.pm.PackageManager")
+            activity = autoclass_activity().mActivity
+            if activity is None:
+                return False
+            pm = activity.getPackageManager()
+            if pm.checkPermission("android.permission.POST_NOTIFICATIONS",
+                                  activity.getPackageName()) == PackageManager.PERMISSION_GRANTED:
+                return True
+            activity.requestPermissions(
+                ["android.permission.POST_NOTIFICATIONS"], 1001)
+            return True
+        except Exception as exc:
+            self.last_error = f"알림 권한 요청 실패: {exc}"
+            return False
 
 
 def autoclass_activity():
